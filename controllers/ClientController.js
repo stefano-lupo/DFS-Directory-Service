@@ -30,35 +30,48 @@ const register = async (req, res) => {
   } catch (error) {
     res.status(403).send(error);
   }
-
-
 };
 
 
 
 /**
- * Post /getFile
+ * GET /remoteFile/:filename
  * Gets the remote url of our file
  */
+
+// TODO: Implement token stuff for identity / auth
 const getRemoteFileURL = async (req, res) => {
-  const { email, password, fileName } = req.body;
-  const client = await Client.findOne({'email': email});
+  const { filename } = req.params;
+  const email = "lupos@tcd.ie";
+  const client = await Client.findOne({email});
   if(!client) {
     return res.status(401).send(`No user with email address: ${email}`);
   }
-  if(!client.isValidPassword(password)) {
-    return res.status(403).send(`Invalid password supplied for user: ${email}`);
-  }
 
   client.files.forEach((file) => {
-    if(file.clientFileName === fileName) {
+    if(file.clientFileName === filename) {
+      console.log("Found match");
       return res.send({
         remoteFile: `${file.remoteNodeAddress}/file/${file.remoteFileId}`
       });
     }
   });
 
-  res.status(404).send(`No remote match for ${fileName}`);
+  res.status(404).send(`No remote match for ${filename}`);
+};
+
+/**
+ * GET /remoteFiles
+ * Returns clients available remote files
+ */
+const getRemoteFiles = async (req, res) => {
+  const { email } = req.params;
+  const client = await Client.findOne({email});
+  if(!client) {
+    return res.status(401).send(`No user with email address: ${email}`);
+  }
+
+  res.send(client.files);
 };
 
 
@@ -100,6 +113,7 @@ const notifyNewFile = async (req, res) => {
 module.exports = {
   register,
   getRemoteFileURL,
+  getRemoteFiles,
   getRemoteHost,
   notifyNewFile,
 };

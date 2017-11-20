@@ -40,13 +40,13 @@ app.use(morgan('dev'));
 app.post('/register', ClientController.register);
 
 // Client
-app.post('/remoteFile', ClientController.getRemoteFileURL);
+app.get('/remoteFile/:filename', ClientController.getRemoteFileURL);
+app.get('/remoteFiles/:email', ClientController.getRemoteFiles);
 app.get('/remoteHost', ClientController.getRemoteHost);
 
+
 // Inter service communication
-
 app.post('/notify', ClientController.notifyNewFile);
-
 
 
 // Initialize the Server
