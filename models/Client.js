@@ -19,7 +19,7 @@ let clientSchema = mongoose.Schema({
         default: false
       },
       remoteNodeAddress: String,
-      remoteFileId: String,
+      remoteFileId: mongoose.SchemaTypes.ObjectId,
     }
   ]
 });
