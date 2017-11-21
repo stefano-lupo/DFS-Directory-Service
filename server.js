@@ -43,6 +43,7 @@ app.post('/register', ClientController.register);
 app.get('/remoteFile/:filename', ClientController.getRemoteFileURL);
 app.get('/remoteFiles/:email', ClientController.getRemoteFiles);
 app.get('/remoteHost', ClientController.getRemoteHost);
+app.get('/publicFiles', ClientController.getAllPublicFiles);
 
 
 // Inter service communication

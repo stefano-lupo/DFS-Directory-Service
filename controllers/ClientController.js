@@ -48,7 +48,7 @@ const getRemoteFileURL = async (req, res) => {
     return res.status(401).send(`No user with email address: ${email}`);
   }
 
-  client.files.forEach((file) => {
+  return client.files.forEach((file) => {
     if(file.clientFileName === filename) {
       console.log("Found match");
       return res.send({
@@ -84,6 +84,22 @@ const getRemoteHost = async (req, res) => {
   nextNode = (++nextNode) % availableNodes.length;
 };
 
+/**
+ * GET publicFiles
+ * Gets all of the available remote hosts
+ */
+const getAllPublicFiles = async (req, res) => {
+  let publicFiles = [];
+  const clients = await Client.find({});
+  clients.forEach(client => {
+    publicFiles.push(client.files.filter(file => !file.private));
+  });
+
+
+  res.send(publicFiles)
+};
+
+
 
 /**
  * POST notify
@@ -115,6 +131,7 @@ module.exports = {
   getRemoteFileURL,
   getRemoteFiles,
   getRemoteHost,
+  getAllPublicFiles,
   notifyNewFile,
 };
 

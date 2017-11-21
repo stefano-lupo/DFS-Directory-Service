@@ -14,8 +14,12 @@ let clientSchema = mongoose.Schema({
   files: [
     {
       clientFileName: String,
+      private: {
+        type: Boolean,
+        default: false
+      },
       remoteNodeAddress: String,
-      remoteFileId: mongoose.Schema.ObjectId
+      remoteFileId: String,
     }
   ]
 });
