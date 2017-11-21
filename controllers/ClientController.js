@@ -126,6 +126,46 @@ const notifyNewFile = async (req, res) => {
 };
 
 
+/**
+ * PUT /notify
+ * Notifies the directory service that a file has been updated by a client
+ * Only hit when file name is updated (or _id is updated but not a thing right now)
+ */
+const notifyUpdatedFile = async (req, res) => {
+  const { email, _id, filename } = req.body;
+  try {
+    const client = await Client.findOne({email});
+    if(!client) {
+      console.log(`No client file match for ${email} - ${_id}`);
+      res.status(404).send(`No client file match for ${email} - ${_id}`);
+    }
+
+    let match = false;
+    for(let i=0; i<client.files.length; i++) {
+      const file = client.files[i];
+      if (file.remoteFileId.toString() === _id) {
+        file.clientFileName = filename;
+        match = true;
+        break;
+      }
+    }
+
+    if(!match) {
+      res.status(404).send(`${email} does not have ${_id}`);
+    }
+
+    try {
+      await client.save();
+      return res.send(`File updated to ${filename}`)
+    } catch (err) {
+      return res.status(500).send(`Error updating File `);
+    }
+  } catch (err) {
+    console.log(err);
+    res.status(500).send(`Error occured searching for client ${email}`);
+  }
+};
+
 module.exports = {
   register,
   getRemoteFileURL,
@@ -133,6 +173,7 @@ module.exports = {
   getRemoteHost,
   getAllPublicFiles,
   notifyNewFile,
+  notifyUpdatedFile
 };
 
 

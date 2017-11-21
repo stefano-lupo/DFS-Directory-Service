@@ -48,7 +48,7 @@ app.get('/publicFiles', ClientController.getAllPublicFiles);
 
 // Inter service communication
 app.post('/notify', ClientController.notifyNewFile);
-
+app.put('/notify', ClientController.notifyUpdatedFile);
 
 // Initialize the Server
 app.listen(3001, function() {
