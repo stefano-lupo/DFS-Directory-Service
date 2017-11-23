@@ -52,5 +52,5 @@ app.put('/notify', ClientController.notifyUpdatedFile);
 
 // Initialize the Server
 app.listen(3001, function() {
-  console.log('Listening on port 3001');
+  console.log('Directory Service on port 3001');
 });

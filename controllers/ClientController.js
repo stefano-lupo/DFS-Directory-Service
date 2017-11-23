@@ -4,7 +4,7 @@ const hashPassword = require('../models/Client').hashPassword;
 const fs = require('fs');
 const path = require('path');
 
-let availableNodes = ['localhost:3000'];//, '10.62.0.57:3000'];
+let availableNodes = ['http://localhost:3000'];//, '10.62.0.57:3000'];
 let nextNode = 0;
 
 
@@ -17,7 +17,7 @@ const register = async (req, res) => {
   let client = await Client.findOne({ email });
 
   if(client) {
-    return res.status(409).send(`Account under ${email} already exists!`);
+    return res.send({success: true, message: `Account under ${email} already exists!`});
   }
 
   client = new Client({email, name});
@@ -26,9 +26,9 @@ const register = async (req, res) => {
   try {
     client.save();
     console.log(`${email} added`);
-    res.send(`Account for ${email} successfully created`)
+    res.send({success: true, message: `Account for ${email} successfully created`})
   } catch (error) {
-    res.status(403).send(error);
+    res.status(403).send({success: false, message: error});
   }
 };
 
@@ -48,16 +48,18 @@ const getRemoteFileURL = async (req, res) => {
     return res.status(401).send(`No user with email address: ${email}`);
   }
 
-  return client.files.forEach((file) => {
+  let remoteFile, matchFound = false;
+  for(let i=0; i<client.files.length; i++) {
+    const file = client.files[i];
     if(file.clientFileName === filename) {
-      console.log("Found match");
-      return res.send({
-        remoteFile: `${file.remoteNodeAddress}/file/${file.remoteFileId}`
-      });
+      matchFound = true;
+      remoteFile = `${file.remoteNodeAddress}/file/${file.remoteFileId}`
     }
-  });
+  }
 
-  res.status(404).send(`No remote match for ${filename}`);
+  if(!matchFound) return res.status(404).send(`No remote match for ${filename}`);
+
+  res.send({remoteFile})
 };
 
 /**
@@ -80,7 +82,7 @@ const getRemoteFiles = async (req, res) => {
  * Gets a host for a client to upload a client to
  */
 const getRemoteHost = async (req, res) => {
-  res.send(`${availableNodes[nextNode]}/file`);
+  res.send(`${availableNodes[nextNode]}`);
   nextNode = (++nextNode) % availableNodes.length;
 };
 
