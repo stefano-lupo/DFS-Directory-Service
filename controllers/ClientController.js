@@ -44,14 +44,14 @@ const register = async (req, res) => {
 
 
 /**
- * GET /remoteFile/:filename
+ * GET /remoteFile?filename=<CLIENTS_FILEPATH>
  * Gets the remote url of our file
- * @response {remote: the endpoint to get the remote file}
+ * @response {endpoint: the endpoint of the file, _id: _id of remote file}
  */
 
 // TODO: Implement token stuff for identity / auth
 const getRemoteFileURL = async (req, res) => {
-  const { filename } = req.params;
+  const { filename } = req.query;
   const email = "stefano@test.com";
   const client = await Client.findOne({email});
   if(!client) {
@@ -59,18 +59,19 @@ const getRemoteFileURL = async (req, res) => {
   }
 
   // TODO: Make this a map for better lookup (Serialize and store in mongo?)
-  let remote, matchFound = false;
+  let endpoint, _id,  matchFound = false;
   for(let i=0; i<client.files.length; i++) {
     const file = client.files[i];
     if(file.clientFileName === filename) {
       matchFound = true;
-      remote = `${file.remoteNodeAddress}/file/${file.remoteFileId}`
+      _id = file.remoteFileId;
+      endpoint = `${file.remoteNodeAddress}/file/${_id}`
     }
   }
 
   if(!matchFound) return res.status(404).send({message: `No remote match for ${filename}`});
 
-  res.send({remote})
+  res.send({endpoint, _id})
 };
 
 /**
@@ -165,6 +166,7 @@ const notifyUpdatedFile = async (req, res) => {
     }
 
     //TODO: Implement clients file's as Map
+
     let match = false;
     for(let i=0; i<client.files.length; i++) {
       const file = client.files[i];

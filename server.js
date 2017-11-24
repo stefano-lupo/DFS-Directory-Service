@@ -40,7 +40,7 @@ app.use(morgan('dev'));
 app.post('/register', ClientController.register);
 
 // Client
-app.get('/remoteFile/:filename', ClientController.getRemoteFileURL);
+app.get('/remoteFile', ClientController.getRemoteFileURL);
 app.get('/remoteFiles/:email', ClientController.getRemoteFiles);
 app.get('/remoteHost', ClientController.getRemoteHost);
 app.get('/publicFiles', ClientController.getAllPublicFiles);
