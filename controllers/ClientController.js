@@ -1,9 +1,7 @@
-const Client = require('../models/Client').Client;
-const hashPassword = require('../models/Client').hashPassword;
-
 const fs = require('fs');
 const path = require('path');
 
+const Client = require('../models/Client').Client;
 let availableNodes = ['http://localhost:3000'];//, '10.62.0.57:3000'];
 let nextNode = 0;
 
@@ -12,50 +10,18 @@ let nextNode = 0;
  * Client API
  **********************************************************************************************************************/
 
-
-/**
- * POST /register
- * body: {email, password, name}
- * Register for an account with the directory service
- * @response {success: boolean, message: string}
- */
-const register = async (req, res) => {
-  const { email, password, name } = req.body;
-  let client = await Client.findOne({ email });
-
-  if(client) {
-    console.log(`Account under ${email} already exists!`);
-    return res.send({success: true, message: `Account under ${email} already exists!`});
-  }
-
-  client = new Client({email, name});
-  client.password = hashPassword(password);
-
-  try {
-    client.save();
-    console.log(`${email} added`);
-    res.send({success: true, message: `Account for ${email} successfully created`})
-  } catch (error) {
-    console.log(error);
-    res.status(403).send({success: false, message: error});
-  }
-};
-
-
-
 /**
  * GET /remoteFile?filename=<CLIENTS_FILEPATH>
  * Gets the remote url of our file
  * @response {endpoint: the endpoint of the file, _id: _id of remote file}
  */
 
-// TODO: Implement token stuff for identity / auth
 const getRemoteFileURL = async (req, res) => {
   const { filename } = req.query;
-  const email = "stefano@test.com";
-  const client = await Client.findOne({email});
+  const { clientId } = req;
+  const client = await Client.findOne({_id: clientId});
   if(!client) {
-    return res.status(401).send({message: `No user with email address: ${email}`});
+    return res.status(401).send({message: `No files for client ${clientId} on this node.`});
   }
 
   // TODO: Make this a map for better lookup (Serialize and store in mongo?)
@@ -75,15 +41,15 @@ const getRemoteFileURL = async (req, res) => {
 };
 
 /**
- * GET /remoteFiles/:email
+ * GET /remoteFiles
  * Get all of the remote files a client has
  * @returns [Client's files]
  */
 const getRemoteFiles = async (req, res) => {
-  const { email } = req.params;
-  const client = await Client.findOne({email});
+  const { clientId } = req;
+  const client = await Client.findOne({_id: clientId});
   if(!client) {
-    return res.status(401).send({message: `No user with email address: ${email}`});
+    return res.status(401).send({message: `Client ${clientId} has no files on this node`});
   }
 
   res.send(client.files);
@@ -116,35 +82,32 @@ const getAllPublicFiles = async (req, res) => {
 };
 
 
-
-
 /***********************************************************************************************************************
  * Inter Service API
  **********************************************************************************************************************/
 
 /**
  * POST /notify
- * body: {email, file (as in Client Model}
+ * body: {clientId, file (as in Client Model}
  * Notify the directory service of a new file belonging to some client
  * @response {message: string}
  */
 const notifyNewFile = async (req, res) => {
-  const { email, file } = req.body;
-  const client = await Client.findOne({email});
+  const { clientId, file } = req.body;
+  let client = await Client.findOne({_id: clientId});
   if(!client) {
-    console.log("Error: unknown client created a file on remote server!");
-    res.status(404).send({message: `Error: Unknown Client ${email}`});
-    return;
+    // Create a new client for the client who has just saved a file on a remote node
+    client = new Client({_id: clientId})
   }
 
   client.files.push(file);
 
   try {
     await client.save();
-    res.send({message: `${file.clientFileName} saved for ${email}.`})
+    res.send({message: `${file.clientFileName} saved for ${clientId}.`})
   } catch (error) {
-    console.log(`Error updating ${email}'s files`);
-    res.status(500).send({message: `Error saving ${email}'s new file ${file.clientFileName}`});
+    console.log(`Error recording of ${clientId}'s new file ${file.clientFileName}`);
+    res.status(500).send({message: `Error recording of ${clientId}'s new file ${file.clientFileName}`});
   }
 
 };
@@ -152,21 +115,22 @@ const notifyNewFile = async (req, res) => {
 
 /**
  * PUT /notify
- * body: {email, _id, filename }
+ * body: {_id, filename }
  * Notifies the directory service that a file has been updated by a client
  * @response {message: string}
  */
 const notifyUpdatedFile = async (req, res) => {
-  const { email, _id, filename } = req.body;
+  const { clientId, _id, filename } = req.body;
   try {
-    const client = await Client.findOne({email});
+    const client = await Client.findOne({_id: clientId});
     if(!client) {
-      console.log(`No client file match for ${email} - ${_id}`);
-      res.status(404).send({message: `No client file match for ${email} - ${_id}`});
+      console.log(`No record of client ${clientId}`);
+      res.status(404).send({message: `No record of client ${clientId}`});
     }
 
     //TODO: Implement clients file's as Map
 
+    // Update the filename (if required)
     let match = false;
     for(let i=0; i<client.files.length; i++) {
       const file = client.files[i];
@@ -178,29 +142,75 @@ const notifyUpdatedFile = async (req, res) => {
     }
 
     if(!match) {
-      return res.status(404).send({message: `${email} does not have ${_id}`});
+      return res.status(404).send({message: `${clientId} does not have a ${filename}`});
     }
 
     try {
       await client.save();
-      return res.send({message: `${filename} updated for ${email}`})
+      return res.send({message: `${filename} updated for ${clientId}`})
     } catch (err) {
-      return res.status(500).send({message: `Error updating ${filename} for ${email} `});
+      return res.status(500).send({message: `Error updating ${filename} for ${clientId} `});
     }
   } catch (err) {
     console.log(err);
-    res.status(500).send({message: `Error occurred searching for client ${email}`});
+    res.status(500).send({message: `Error occurred searching for client ${clientId}`});
   }
 };
 
+
+/**
+ * DELETE /remoteFile/:clientId/:_id
+ * Notifies the directory service that a file has been deleted by a client
+ * @response {message: string}
+ */
+const notifyDeletedRemoteFile = async (req, res) => {
+  const { _id, clientId } = req.params;
+  try {
+    const client = await Client.findOne({_id: clientId});
+    if(!client) {
+      console.log(`No record of client ${clientId}`);
+      res.status(404).send({message: `No record of client ${clientId}`});
+    }
+
+    //TODO: Implement clients file's as Map
+
+    let match = false;
+    for(let i=0; i<client.files.length; i++) {
+      const file = client.files[i];
+      if (file.remoteFileId.toString() === _id) {
+        client.files.splice(i, 1);
+        match = true;
+        break;
+      }
+    }
+
+    if(!match) {
+      return res.status(404).send({message: `${clientId} does not have a file ${_id}`});
+    }
+
+    try {
+      await client.save();
+      return res.send({message: `${_id} was deleted for ${clientId}`})
+    } catch (err) {
+      return res.status(500).send({message: `Error deleting ${_id} for ${clientId} `});
+    }
+  } catch (err) {
+    console.log(err);
+    res.status(500).send({message: `Error occurred searching for client ${clientId}`});
+  }
+};
+
+
+
+
 module.exports = {
-  register,
   getRemoteFileURL,
   getRemoteFiles,
   getRemoteHost,
   getAllPublicFiles,
   notifyNewFile,
-  notifyUpdatedFile
+  notifyUpdatedFile,
+  notifyDeletedRemoteFile,
 };
 
 
