@@ -62,7 +62,7 @@ const getRemoteFiles = async (req, res) => {
  * @response {remote: endpoint to upload file to}
  */
 const getRemoteHost = async (req, res) => {
-  res.send({remote: `${availableNodes[nextNode]}`});
+  res.send({remote: `${availableNodes[nextNode]}/file`});
   nextNode = (++nextNode) % availableNodes.length;
 };
 
