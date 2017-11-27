@@ -40,6 +40,32 @@ const getRemoteFileURL = async (req, res) => {
   res.send({endpoint, _id})
 };
 
+
+/**
+ * GET /remoteFile/:_id
+ * Gets remote file info by _id
+ * This reverse lookup may (although should be very infrequent if ever) needed by caching service
+ */
+const getRemoteFileInfoById = async (req, res) => {
+  const { clientId } = req;
+  const { _id } = req.params;
+
+  const client = await Client.findOne({_id: clientId});
+
+  for(let i=0; i<client.files.length; i++) {
+    const file = client.files[i];
+    if(file.remoteFileId.toString() === _id) {
+      const endpoint = `${file.remoteNodeAddress}/file/${_id}`;
+      const filename = file.clientFileName;
+      return res.send({endpoint, filename});
+    }
+  }
+
+  res.status(404).send({message: `Client ${clientId} has no file ${_id}`});
+};
+
+
+
 /**
  * GET /remoteFiles
  * Get all of the remote files a client has
@@ -205,6 +231,7 @@ const notifyDeletedRemoteFile = async (req, res) => {
 
 module.exports = {
   getRemoteFileURL,
+  getRemoteFileInfoById,
   getRemoteFiles,
   getRemoteHost,
   getAllPublicFiles,

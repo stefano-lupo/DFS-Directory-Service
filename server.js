@@ -89,6 +89,7 @@ app.use(authenticator);
 
 // Endpoints for clients
 app.get('/remoteFile', ClientController.getRemoteFileURL);
+app.get('/remoteFile/:_id', ClientController.getRemoteFileInfoById);
 app.get('/remoteFiles', ClientController.getRemoteFiles);
 app.get('/remoteHost', ClientController.getRemoteHost);
 app.get('/publicFiles', ClientController.getAllPublicFiles);
