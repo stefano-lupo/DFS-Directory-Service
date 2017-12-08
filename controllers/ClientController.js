@@ -18,7 +18,9 @@ let nextNode = 0;
 
 const getRemoteFileURL = async (req, res) => {
   const { filename } = req.query;
+  console.log(`Looking for: ${filename}`);
   const { clientId } = req;
+  console.log(`Client id : ${clientId}`);
   const client = await Client.findOne({_id: clientId});
   if(!client) {
     return res.status(401).send({message: `No files for client ${clientId} on this node.`});
@@ -94,7 +96,7 @@ const getRemoteHost = async (req, res) => {
 
 /**
  * GET /publicFiles
- * Gets all of the available public files on this node
+ * Gets all of the available public files that we know about
  * @response [public files]
  */
 const getAllPublicFiles = async (req, res) => {
@@ -105,6 +107,25 @@ const getAllPublicFiles = async (req, res) => {
   });
 
   res.send(publicFiles)
+};
+
+
+/**
+ * POST /sharedFile
+ * Register a new file for this client that points to a file made by someone else
+ */
+const registerSharedFile = async (req, res) => {
+  const { clientFileName, remoteNodeAddress, remoteFileId } = req.decrypted;
+  console.log(req.clientId);
+  let client = await Client.findOne({_id: req.clientId});
+
+  if(!client) {
+    client = new Client({_id: req.clientId});
+  }
+
+  client.files.push({clientFileName, remoteNodeAddress, remoteFileId});
+  await client.save();
+  res.send({message: `Added a directory entry for ${req.clientId} for file ${clientFileName}`});
 };
 
 
@@ -235,6 +256,7 @@ module.exports = {
   getRemoteFiles,
   getRemoteHost,
   getAllPublicFiles,
+  registerSharedFile,
   notifyNewFile,
   notifyUpdatedFile,
   notifyDeletedRemoteFile,

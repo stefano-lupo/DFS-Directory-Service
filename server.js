@@ -93,7 +93,7 @@ app.get('/remoteFile/:_id', ClientController.getRemoteFileInfoById);
 app.get('/remoteFiles', ClientController.getRemoteFiles);
 app.get('/remoteHost', ClientController.getRemoteHost);
 app.get('/publicFiles', ClientController.getAllPublicFiles);
-
+app.post('/sharedFile', ClientController.registerSharedFile);
 
 
 
