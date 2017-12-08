@@ -98,8 +98,9 @@ app.get('/publicFiles', ClientController.getAllPublicFiles);
 
 
 // Initialize the Server
-app.listen(3001, function() {
-  console.log('Directory Service on port 3001');
+const port = process.argv[2] || process.env.port || 3001;
+app.listen(port, () => {
+  console.log(`Listening on port ${port}`);
 });
 
 
