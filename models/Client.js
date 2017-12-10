@@ -9,7 +9,7 @@ let clientSchema = mongoose.Schema({
         type: Boolean,
         default: false
       },
-      remoteNodeAddress: String,
+      slaves: Array,
       remoteFileId: mongoose.SchemaTypes.ObjectId,
     }
   ]

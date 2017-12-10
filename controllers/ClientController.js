@@ -2,8 +2,13 @@ const fs = require('fs');
 const path = require('path');
 
 const Client = require('../models/Client').Client;
-let availableNodes = ['http://localhost:3000'];//, '10.62.0.57:3000'];
-let nextNode = 0;
+let possibleSlaves = ['http://localhost:3010', 'http://localhost:3011', 'http://localhost:3012'];
+let availableSlaves = new Map();
+possibleSlaves.forEach(slave => {
+  availableSlaves.set(slave, 0);
+});
+let availableMasters = ['http://localhost:3000'];
+let nextMaster = 0;
 
 
 /***********************************************************************************************************************
@@ -11,12 +16,12 @@ let nextNode = 0;
  **********************************************************************************************************************/
 
 /**
- * GET /remoteFile?filename=<CLIENTS_FILEPATH>
- * Gets the remote url of our file
+ * GET /remoteFile/read?filename=<CLIENTS_FILEPATH>
+ * Gets the remote url of our file for reading
  * @response {endpoint: the endpoint of the file, _id: _id of remote file}
  */
 
-const getRemoteFileURL = async (req, res) => {
+const getReadRemoteFileURL = async (req, res) => {
   const { filename } = req.query;
   console.log(`Looking for: ${filename}`);
   const { clientId } = req;
@@ -27,26 +32,26 @@ const getRemoteFileURL = async (req, res) => {
   }
 
   // TODO: Make this a map for better lookup (Serialize and store in mongo?)
-  let endpoint, _id,  matchFound = false;
+  let _id;
   for(let i=0; i<client.files.length; i++) {
     const file = client.files[i];
     if(file.clientFileName === filename) {
-      matchFound = true;
       _id = file.remoteFileId;
-      endpoint = `${file.remoteNodeAddress}/file/${_id}`
+      const endpoint = `${getNextSlave(file.slaves)}/file/${_id}`;
+      console.log(`Next endpoint: ${endpoint}`);
+      return res.send({endpoint, _id})
     }
   }
 
-  if(!matchFound) return res.status(404).send({message: `No remote match for ${filename}`});
+  res.status(404).send({message: `No remote match for ${filename}`});
 
-  res.send({endpoint, _id})
 };
 
 
 /**
  * GET /remoteFile/:_id
  * Gets remote file info by _id
- * This reverse lookup may (although should be very infrequent if ever) needed by caching service
+ * This reverse lookup is needed (although should be very infrequently) by caching service
  */
 const getRemoteFileInfoById = async (req, res) => {
   const { clientId } = req;
@@ -57,7 +62,7 @@ const getRemoteFileInfoById = async (req, res) => {
   for(let i=0; i<client.files.length; i++) {
     const file = client.files[i];
     if(file.remoteFileId.toString() === _id) {
-      const endpoint = `${file.remoteNodeAddress}/file/${_id}`;
+      const endpoint = `${getNextSlave(file.slaves)}/file/${_id}`;
       const filename = file.clientFileName;
       return res.send({endpoint, filename});
     }
@@ -85,13 +90,13 @@ const getRemoteFiles = async (req, res) => {
 
 
 /**
- * GET remoteHost
+ * GET /remoteFile/write
  * Gets a host for a client to upload a file to
  * @response {remote: endpoint to upload file to}
  */
-const getRemoteHost = async (req, res) => {
-  res.send({remote: `${availableNodes[nextNode]}/file`});
-  nextNode = (++nextNode) % availableNodes.length;
+const getMasterServer = async (req, res) => {
+  res.send({remote: `${availableMasters[nextMaster]}/file`});
+  nextMaster = (++nextMaster) % availableMasters.length;
 };
 
 /**
@@ -115,7 +120,7 @@ const getAllPublicFiles = async (req, res) => {
  * Register a new file for this client that points to a file made by someone else
  */
 const registerSharedFile = async (req, res) => {
-  const { clientFileName, remoteNodeAddress, remoteFileId } = req.decrypted;
+  const { clientFileName, slaves, remoteFileId } = req.decrypted;
   console.log(req.clientId);
   let client = await Client.findOne({_id: req.clientId});
 
@@ -123,7 +128,7 @@ const registerSharedFile = async (req, res) => {
     client = new Client({_id: req.clientId});
   }
 
-  client.files.push({clientFileName, remoteNodeAddress, remoteFileId});
+  client.files.push({clientFileName, slaves, remoteFileId});
   await client.save();
   res.send({message: `Added a directory entry for ${req.clientId} for file ${clientFileName}`});
 };
@@ -147,11 +152,16 @@ const notifyNewFile = async (req, res) => {
     client = new Client({_id: clientId})
   }
 
+  file.slaves = chooseSlavesToStoreFile();
+
   client.files.push(file);
 
   try {
     await client.save();
-    res.send({message: `${file.clientFileName} saved for ${clientId}.`})
+
+    // Respond to master file system node and tell it which slaves to replicate that file on
+    console.log(file.slaves);
+    res.send({message: `${file.clientFileName} saved for ${clientId} - Now distribute that file to slaves`, slaves: file.slaves})
   } catch (error) {
     console.log(`Error recording of ${clientId}'s new file ${file.clientFileName}`);
     res.status(500).send({message: `Error recording of ${clientId}'s new file ${file.clientFileName}`});
@@ -216,15 +226,16 @@ const notifyDeletedRemoteFile = async (req, res) => {
     const client = await Client.findOne({_id: clientId});
     if(!client) {
       console.log(`No record of client ${clientId}`);
-      res.status(404).send({message: `No record of client ${clientId}`});
+      return res.status(404).send({message: `No record of client ${clientId}`});
     }
 
     //TODO: Implement clients file's as Map
 
-    let match = false;
+    let match = false, slaves;
     for(let i=0; i<client.files.length; i++) {
       const file = client.files[i];
       if (file.remoteFileId.toString() === _id) {
+        slaves = file.slaves;
         client.files.splice(i, 1);
         match = true;
         break;
@@ -237,8 +248,9 @@ const notifyDeletedRemoteFile = async (req, res) => {
 
     try {
       await client.save();
-      return res.send({message: `${_id} was deleted for ${clientId}`})
+      return res.send({message: `${_id} was deleted for ${clientId}`, slaves});
     } catch (err) {
+      console.error(err);
       return res.status(500).send({message: `Error deleting ${_id} for ${clientId} `});
     }
   } catch (err) {
@@ -247,14 +259,44 @@ const notifyDeletedRemoteFile = async (req, res) => {
   }
 };
 
+/**
+ * Decides on the next slave that should be used to read from.
+ * @param slaves the slaves who currently have this file available
+ * @returns ip of chosen slave to read from
+ */
+function getNextSlave(slaves) {
+
+  console.log(`Picking slave from ${slaves}`);
+  let nextSlave;
+  let lowestAccesses = null;
+  slaves.forEach(slave => {
+    const slaveAccesses = availableSlaves.get(slave);
+    if(lowestAccesses === null || slaveAccesses < lowestAccesses) {
+      lowestAccesses = slaveAccesses;
+      nextSlave = slave;
+      console.log(`${nextSlave} new fewest accesses ${lowestAccesses}`);
+    }
+  });
+
+  availableSlaves.set(nextSlave, (++lowestAccesses));
+
+  return nextSlave;
+}
 
 
+/**
+ * This could be smart about how many of the slaves should store this file
+ * For not, just have them all replicate it
+ */
+function chooseSlavesToStoreFile() {
+  return [...availableSlaves.keys()]
+}
 
 module.exports = {
-  getRemoteFileURL,
+  getReadRemoteFileURL,
   getRemoteFileInfoById,
   getRemoteFiles,
-  getRemoteHost,
+  getMasterServer,
   getAllPublicFiles,
   registerSharedFile,
   notifyNewFile,
