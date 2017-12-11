@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// Define fields
+// Define fields for Clients in the Directory Service Database
 let clientSchema = mongoose.Schema({
   files: [
     {
@@ -15,9 +15,4 @@ let clientSchema = mongoose.Schema({
   ]
 });
 
-// Compile schema into model BEFORE compilation
-let Client = mongoose.model('Client', clientSchema);
-
-module.exports = {
-  Client,
-};
+export const Client = mongoose.model('Client', clientSchema);

@@ -4,9 +4,11 @@ import mongoose from 'mongoose';
 import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import moment from 'moment';
+import dotenv from 'dotenv';
+dotenv.config();
 
 // Import Controllers
-import ClientController from './controllers/ClientController';
+import * as ClientController from './controllers/ClientController';
 
 // Create Server
 const app = express();
@@ -14,10 +16,8 @@ app.use(bodyParser.urlencoded({extended: true}));   // Parses application/x-www-
 app.use(bodyParser.json());                         // Parses application/json for req.body
 app.use(morgan('dev'));
 
-// Initialize .env
-require('dotenv').config();
 
-// Make encryption parameters accessible
+// Make encryption parameters accessible to controllers
 const encryption = {
   algorithm: process.env.SYMMETRIC_ENCRYPTION,
   plainEncoding: process.env.PLAIN_ENCODING,
@@ -31,7 +31,7 @@ const dbURL = "mongodb://localhost/dfs_directoryService";
 mongoose.connect(dbURL);
 const db = mongoose.connection;
 db.on('error', console.error.bind(console, 'connection error:'));
-db.once('open', function() {
+db.once('open', () => {
   console.log("Connected to Database");
 });
 
@@ -74,11 +74,12 @@ const authenticator = (req, res, next) => {
     return res.status(401).send({message: `Invalid authorization key provided`})
   }
 
+  // Proceed to controller
   next()
 };
 
 
-// Endpoints for Inter service communication (MUST BE BEFORE AUTHENTICATOR)
+// Endpoints for Inter service communication (must be before client authenticator)
 app.post('/notify', ClientController.notifyNewFile);
 app.put('/notify', ClientController.notifyUpdatedFile);
 app.delete('/remoteFile/:clientId/:_id', ClientController.notifyDeletedRemoteFile);
@@ -92,7 +93,7 @@ app.get('/remoteFile/read', ClientController.getReadRemoteFileURL);
 app.get('/remoteFile/write', ClientController.getMasterServer);
 app.get('/remoteFile/:_id', ClientController.getRemoteFileInfoById);
 app.get('/remoteFiles', ClientController.getRemoteFiles);
-app.get('/publicFiles', ClientController.getAllPublicFiles);
+app.get('/publicFiles/:email', ClientController.getPublicFilesByEmail);
 app.post('/sharedFile', ClientController.registerSharedFile);
 
 
