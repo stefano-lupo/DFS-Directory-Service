@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import mongoose from 'mongoose';
 const Client = require('../models/Client').Client;
 
 const SECURITY_SERVICE_ENDPOINT = "http://192.168.1.17:3003";
@@ -44,26 +45,13 @@ export const getReadRemoteFileURL = async (req, res) => {
   console.log(`Looking for: ${filename}`);
   console.log(`Client id : ${clientId}`);
 
-  const client = await Client.findOne({_id: clientId});
-  if(!client) {
-    return res.status(401).send({message: `No files for client ${clientId} on this node.`});
+  try {
+    const { slaves, remoteFileId } = await getSingleFileInfoByField(clientId, {clientFileName: filename});
+    const endpoint = `${getNextSlave(slaves)}/file/${remoteFileId}`;
+    res.send({endpoint, _id: remoteFileId})
+  } catch (error) {
+    res.status(404).send({message: `No remote match for ${filename}`});
   }
-
-  // TODO: Make this a map for better lookup (Serialize and store in mongo?)
-  // Get the meta data for that file
-  let _id;
-  for(let i=0; i<client.files.length; i++) {
-    const file = client.files[i];
-    console.log(file.clientFileName + "  " + filename);
-    if(file.clientFileName === filename) {
-      _id = file.remoteFileId;
-      const endpoint = `${getNextSlave(file.slaves)}/file/${_id}`;
-      console.log(`Next endpoint for ${filename}: ${endpoint}`);
-      return res.send({endpoint, _id})
-    }
-  }
-
-  res.status(404).send({message: `No remote match for ${filename}`});
 
 };
 
@@ -77,18 +65,13 @@ export const getRemoteFileInfoById = async (req, res) => {
   const { clientId } = req;
   const { _id } = req.params;
 
-  const client = await Client.findOne({_id: clientId});
-
-  for(let i=0; i<client.files.length; i++) {
-    const file = client.files[i];
-    if(file.remoteFileId.toString() === _id) {
-      const endpoint = `${getNextSlave(file.slaves)}/file/${_id}`;
-      const filename = file.clientFileName;
-      return res.send({endpoint, filename});
-    }
+  try {
+    const { slaves, clientFileName } = await getSingleFileInfoByField(clientId, {remoteFileId: _id});
+    const endpoint = `${getNextSlave(slaves)}/file/${_id}`;
+    res.send({endpoint, filename: clientFileName});
+  } catch (error) {
+    res.status(404).send({message: `Client ${clientId} has no file ${_id}`});
   }
-
-  res.status(404).send({message: `Client ${clientId} has no file ${_id}`});
 };
 
 
@@ -152,39 +135,26 @@ export const getPublicFilesByEmail = async (req, res) => {
 export const registerSharedFile = async (req, res) => {
   const { clientFileName, ownerId, remoteFileId } = req.decrypted;
 
-  // Get slaves who have this file stored
-  const owner = await Client.findOne({_id: ownerId, 'files.remoteFileId': remoteFileId});
 
-  if(!owner) {
-    return res.status(404).send({message: `Could not match owner ${ownerId} with file ${remoteFileId}`});
-  }
+  try {
+    const { slaves } = await getSingleFileInfoByField(ownerId, { remoteFileId });
+    console.log(slaves);
 
-  let slaves, match = false;
-  for(let i=0; i<owner.files.length; i++) {
-    console.log(owner.files[i].remoteFileId.toString()  + "  " + remoteFileId);
-    if(owner.files[i].remoteFileId.toString() === remoteFileId) {
-      console.log(`Matched`);
-      slaves = owner.files[i].slaves;
-      match = true;
-      break;
+    // Create new client if doesn't already exist
+    let client = await Client.findOne({_id: req.clientId});
+    if(!client) {
+      client = new Client({_id: req.clientId});
     }
+
+    // Add owner's file entry with receiving client's file name to receiving clients files
+    client.files.push({clientFileName, slaves, remoteFileId});
+    await client.save();
+    res.send({message: `Added a directory entry for ${req.clientId} for file ${clientFileName}`});
+
+  } catch (error) {
+    console.error(error);
+    res.status(404).send({message: `Owner ${ownerId} does not have file ${remoteFileId}`});
   }
-
-  if(!match) {
-    return res.status(404).send({message: `Owner ${ownerId} does not have file ${remoteFileId}`});
-  }
-
-
-  let client = await Client.findOne({_id: req.clientId});
-
-  if(!client) {
-    client = new Client({_id: req.clientId});
-  }
-
-  client.files.push({clientFileName, slaves, remoteFileId});
-  console.log(client.files);
-  await client.save();
-  res.send({message: `Added a directory entry for ${req.clientId} for file ${clientFileName}`});
 };
 
 
@@ -212,7 +182,7 @@ export const notifyNewFile = async (req, res) => {
   client.files.push(file);
 
   try {
-    // Savbe client and respond to master file system node and tell it which slaves to replicate that file on
+    // Save client and respond to master file system node and tell it which slaves to replicate that file on
     await client.save();
     res.send({message: `${file.clientFileName} saved for ${clientId} - Now distribute that file to slaves`, slaves: file.slaves})
   } catch (error) {
@@ -236,8 +206,6 @@ export const notifyUpdatedFile = async (req, res) => {
       console.log(`No record of client ${clientId}`);
       res.status(404).send({message: `No record of client ${clientId}`});
     }
-
-    //TODO: Implement clients file's as Map
 
     // Update the filename (if required)
     let match = false, slaves = [];
@@ -275,6 +243,9 @@ export const notifyUpdatedFile = async (req, res) => {
  */
 export const notifyDeletedRemoteFile = async (req, res) => {
   const { _id, clientId } = req.params;
+
+  const client = await getSingleFileInfoByField(clientId,  {remoteFileId: _id});
+
   try {
     const client = await Client.findOne({_id: clientId});
     if(!client) {
@@ -282,7 +253,6 @@ export const notifyDeletedRemoteFile = async (req, res) => {
       return res.status(404).send({message: `No record of client ${clientId}`});
     }
 
-    //TODO: Implement clients file's as Map
     // Remove file from clients files
     let match = false, slaves;
     for(let i=0; i<client.files.length; i++) {
@@ -320,6 +290,30 @@ export const notifyDeletedRemoteFile = async (req, res) => {
 /***********************************************************************************************************************
  * Helper Methods
  **********************************************************************************************************************/
+
+/**
+ * Gets the client and the single file we are interested in
+ * @param clientId id of client to pull from
+ * @param matcher {key: value} of one attribute on a file that the client has
+ * @returns client object with a single file that matched
+ */
+async function getSingleFileInfoByField (clientId, matcher) {
+    const key = Object.keys(matcher)[0];
+  const value = matcher[key];
+  console.log(key + ": " + value);
+
+
+  const client =  await Client.findOne({_id: mongoose.Types.ObjectId(clientId)},
+    {files: { $elemMatch: { [key]: value  }  }
+  });
+
+  if(client.files.length === 0) {
+    throw new Error(`Could not match file for ${clientId} using ${matcher}`);
+  }
+
+  return client.files[0];
+}
+
 
 /**
  * Decides on the next slave that should be used to read from.
